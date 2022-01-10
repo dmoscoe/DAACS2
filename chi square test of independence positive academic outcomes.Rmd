@@ -1,0 +1,83 @@
+---
+title: "chi^2 test of independence"
+author: "Daniel Moscoe"
+date: "11/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Are the results of predicted positive outcomes independent of the results from a naive model? Previously, you constructed a naive model for comparison that assumed that all positive outcomes were independent. But this assumption is probably false. So you need a table of expected values that does not assume that positive outcomes are independent.
+
+Table of expected outcomes: Columns are predicted positive outcomes 0-5. Rows are actual positive outcomes 0-5. Each cell is:
+
+(Fraction of students attaining c positive outcomes) * (fraction of students attaining r positive outcomes).
+
+That's because if the model is truly useless then it will predict c positive outcomes with an equal probability for all students.
+
+So how many students at EC who have taken all DAACS assessments have any given number of positive outcomes? These expected value tables are going to give you probabilities, and then you can multiply the probabilities by the actual number of students in the test set for direct comparison with model results.
+
+```{r}
+names(ec_tidy)
+```
+
+```{r}
+library(tidyverse)
+library(janitor)
+ec_tidy <- read_csv("ec_tidy.csv")
+
+#Augment by adding total number of positive outcomes
+ec_aug <- ec_tidy %>%
+  mutate("total_pos_outcomes" = Retained + SuccessTerm1 + SuccessTerm2 + (CreditRatio_Term1 == 1) + (CreditRatio_Term2 == 1))
+
+expected_probs_base <- ec_aug %>%
+  group_by(total_pos_outcomes) %>%
+  #summarise(n()/2532)
+  summarise(n())
+
+#Find students who completed all DAACS assessments at EC and get expected probabilities:
+
+complete_rows <- complete.cases(ec_tidy)
+ec_tidy_complete <- ec_tidy[complete_rows,]
+
+ec_tidy_complete_aug <- ec_tidy_complete %>%
+  select(Retained, SuccessTerm1, SuccessTerm2, CreditRatio_Term1, CreditRatio_Term2) %>%
+  mutate("total_pos_outcomes" = Retained + SuccessTerm1 + SuccessTerm2 + (CreditRatio_Term1 == 1) + (CreditRatio_Term2 == 1))
+
+expected_probs_daacs <- ec_tidy_complete_aug %>%
+  group_by(total_pos_outcomes) %>%
+  summarise(n()/784)
+
+
+```
+
+Now do it for WGU:
+
+```{r}
+wgu_tidy <- read_csv("wgu_tidy.csv")
+
+#Augment by adding total number of positive outcomes
+wgu_aug <- wgu_tidy %>%
+  mutate("total_pos_outcomes" = Retained + OnTime_Term1 + OnTime_Term2 + (CreditRatio_Term1 == 1) + (CreditRatio_Term2 == 1))
+
+expected_probs_base <- wgu_aug %>%
+  group_by(total_pos_outcomes) %>%
+  summarise(n()/6260)
+
+#Find students who completed all DAACS assessments at EC and get expected probabilities:
+
+complete_rows <- complete.cases(ec_tidy)
+ec_tidy_complete <- ec_tidy[complete_rows,]
+
+ec_tidy_complete_aug <- ec_tidy_complete %>%
+  select(Retained, SuccessTerm1, SuccessTerm2, CreditRatio_Term1, CreditRatio_Term2) %>%
+  mutate("total_pos_outcomes" = Retained + SuccessTerm1 + SuccessTerm2 + (CreditRatio_Term1 == 1) + (CreditRatio_Term2 == 1))
+
+expected_probs_daacs <- ec_tidy_complete_aug %>%
+  group_by(total_pos_outcomes) %>%
+  summarise(n()/784)
+```
+
+Look at chi square test of independence positive academic outcomes.xlsx for the rest of this work.

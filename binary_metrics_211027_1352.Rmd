@@ -1,0 +1,104 @@
+---
+title: "Binary Metrics"
+author: "Daniel Moscoe"
+date: "10/27/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+loadObject loads an object but allows you to set the name of the object in the environment.
+binary_metrics is used to help populate the table models, which contains all the results from the SuperLearners.
+preds_and_actuals were populated based on SuperLearner objects according to the code in preds_and_actuals.
+```{r}
+library(tidyverse)
+library(InformationValue)
+library(pROC)
+
+loadObject <- function(fileName){
+  load(fileName)
+  get(ls()[ls() != "fileName"])
+}
+
+#Actuals, then predictions
+binary_metrics <- function(df){
+  optimal_cutoff <- InformationValue::optimalCutoff(actuals = df[1],
+                                                    predictedScores = df[2],
+                                                    optimiseFor = "misclasserror")
+  
+  naive_accuracy <- max(sum(df[1])/nrow(df), 1 - sum(df[1])/nrow(df))
+  
+  cm <- InformationValue::confusionMatrix(actuals = df[[1]],
+                                          predictedScores = df[[2]],
+                                          threshold = optimal_cutoff)
+  auc <- pROC::auc(df[[1]], df[[2]])
+
+  res <- data.frame("oc" = optimal_cutoff,
+                    "auc" = auc,
+                    "tp" = cm[2,2],
+                    "fp" = cm[2,1],
+                    "tn" = cm[1,1],
+                    "fn" = cm[1,2],
+                    "na" = naive_accuracy)
+  return(res)
+}
+?read_csv
+models <- read_csv("models.csv", col_types = "icccccddiiiid")
+ec_preds_and_actuals <- loadObject("ec_preds_and_actuals")
+wgu_preds_and_actuals <- loadObject("wgu_preds_and_actuals")
+```
+
+```{r}
+#actuals is the column in a preds_and_actuals containing actual values.
+#preds is the column in a preds_and_actuals containing predicted values.
+#r is the row number in models to load with the results of binary_metrics.
+
+loadModelsDF <- function(actuals, preds, r){
+  df <- data.frame("actuals" = actuals,
+                   "preds" = preds)
+  df <- filter(df, !is.na(preds))
+  to_load <- binary_metrics(df)
+  models[r,c(7:13)] <<- to_load[1,]
+}
+
+```
+
+This populates the table models with the binary metrics from each SuperLearner model.
+```{r, message = FALSE, warning = FALSE}
+loadModelsDF(wgu_preds_and_actuals$actual_ontime_term1, wgu_preds_and_actuals$pred_wgu_base_OnTime_Term1, 1)
+loadModelsDF(wgu_preds_and_actuals$actual_ontime_term2, wgu_preds_and_actuals$pred_wgu_base_OnTime_Term2, 2)
+loadModelsDF(wgu_preds_and_actuals$actual_retained, wgu_preds_and_actuals$pred_wgu_base_Retained, 3)
+loadModelsDF(wgu_preds_and_actuals$actual_creditratio_term1_bin, wgu_preds_and_actuals$pred_wgu_base_CreditRatio_Term1_bin, 4)
+loadModelsDF(wgu_preds_and_actuals$actual_creditratio_term2_bin, wgu_preds_and_actuals$pred_wgu_base_CreditRatio_Term2_bin, 5)
+loadModelsDF(wgu_preds_and_actuals$actual_ontime_term1, wgu_preds_and_actuals$pred_wgu_daacs_OnTime_Term1, 8)
+loadModelsDF(wgu_preds_and_actuals$actual_ontime_term2, wgu_preds_and_actuals$pred_wgu_daacs_OnTime_Term2, 9)
+loadModelsDF(wgu_preds_and_actuals$actual_retained, wgu_preds_and_actuals$pred_wgu_daacs_Retained, 10)
+loadModelsDF(wgu_preds_and_actuals$actual_creditratio_term1_bin, wgu_preds_and_actuals$pred_wgu_daacs_CreditRatio_Term1_bin, 11)
+loadModelsDF(wgu_preds_and_actuals$actual_creditratio_term2_bin, wgu_preds_and_actuals$pred_wgu_daacs_CreditRatio_Term2_bin, 12)
+loadModelsDF(ec_preds_and_actuals$actual_successterm1, ec_preds_and_actuals$pred_ec_base_SuccessTerm1, 15)
+loadModelsDF(ec_preds_and_actuals$actual_successterm2, ec_preds_and_actuals$pred_ec_base_SuccessTerm2, 16)
+loadModelsDF(ec_preds_and_actuals$actual_retained, ec_preds_and_actuals$pred_ec_base_Retained, 17)
+loadModelsDF(ec_preds_and_actuals$actual_creditratio_term1_bin, ec_preds_and_actuals$pred_ec_base_CreditRatio_Term1_bin, 18)
+loadModelsDF(ec_preds_and_actuals$actual_creditratio_term2_bin, ec_preds_and_actuals$pred_ec_base_CreditRatio_Term2_bin, 19)
+loadModelsDF(ec_preds_and_actuals$actual_successterm1, ec_preds_and_actuals$pred_ec_daacs_SuccessTerm1, 22)
+loadModelsDF(ec_preds_and_actuals$actual_successterm2, ec_preds_and_actuals$pred_ec_daacs_SuccessTerm2, 23)
+loadModelsDF(ec_preds_and_actuals$actual_retained, ec_preds_and_actuals$pred_ec_daacs_Retained, 24)
+loadModelsDF(ec_preds_and_actuals$actual_creditratio_term1_bin, ec_preds_and_actuals$pred_ec_daacs_CreditRatio_Term1_bin, 25)
+loadModelsDF(ec_preds_and_actuals$actual_creditratio_term2_bin, ec_preds_and_actuals$pred_ec_daacs_CreditRatio_Term2_bin, 26)
+
+```
+
+This computes the accuracy of each superlearner model in the table models.
+```{r}
+models <- models %>%
+  mutate("accuracy" = (true_positives + true_negatives) / (true_positives + true_negatives + false_positives + false_negatives))
+```
+
+```{r}
+save(models, file = "model_results_211028_1134")
+write_csv(models, file = "model_results_211028_1134.csv")
+```
+

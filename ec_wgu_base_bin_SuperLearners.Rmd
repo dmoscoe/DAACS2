@@ -1,0 +1,404 @@
+---
+title: "EC and WGU Base Binary SuperLearners"
+author: "Daniel Moscoe"
+date: "10/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The purpose of this document is to generate SuperLearner objects for all base binary variables for EC and WGU.
+
+## Shared Setup
+
+Multicore and memory
+```{r}
+options(java.parameters = "-Xmx100g")
+num_cores <- RhpcBLASctl::get_num_cores()
+options(mc.cores = num_cores)
+#getOption("mc.cores")
+```
+
+```{r, warning = FALSE, message = FALSE}
+library(janitor)
+library(modelr)
+library(SuperLearner)
+library(tidyverse)
+
+ec_tidy <- read_csv("ec_tidy.csv")
+wgu_tidy <- read_csv("wgu_tidy.csv")
+```
+
+```{r}
+ec_base_vars <- c('INCOME_RANGE_CODE',"EMPLOYMENT_LVL_CODE","ENGLISH_LANGUAGE_NATIVE","First_Generation","ETHNICITY","GENDER","Age","ACTIVE_MIL_STUDENT","MVET","DIVISION_CODE","Initial_TRANSFER_CREDITS_EARNED")
+
+wgu_base_vars <- c("TRANSFER_CREDITS", "CURRENT_PROGRAM_CODE", "Age", "MilitaryStudent", "EMPLOYMENT_STATUS", "FIRST_GEN_STUDENT", "GENDER", "HOUSEHOLD_INCOME", "ETHNICITY2", "Hispanic")
+```
+
+```{r}
+#Inner cross-validation folds for SuperLearner
+inner_cv <- 5
+
+#Fraction of data in training set
+training_fraction <- 0.80
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+ec_training_rows <- sample(nrow(ec_tidy), training_fraction * nrow(ec_tidy), replace = FALSE)
+ec_base_trn <- ec_tidy[ec_training_rows, ec_base_vars]
+ec_base_tst <- ec_tidy[-ec_training_rows, ec_base_vars]
+
+wgu_training_rows <- sample(nrow(wgu_tidy), training_fraction * nrow(wgu_tidy), replace = FALSE)
+wgu_base_trn <- wgu_tidy[wgu_training_rows, wgu_base_vars]
+wgu_base_tst <- wgu_tidy[-wgu_training_rows, wgu_base_vars]
+```
+
+```{r}
+# df is a subset of ec_tidy or wgu_tidy.
+# returns a model matrix that can be used as the X argument for SuperLearner().
+
+mod_mtx <- function(df){
+  res <- as.data.frame(
+    model.matrix.lm(
+      ~., data = df, na.action = "na.pass"
+    )
+  )
+  names(res) <- names(clean_names(res))
+  res <- res[,-1]
+  return(res)
+}
+```
+
+```{r}
+ec_Retained_trn <- as.numeric(ec_tidy$Retained[ec_training_rows])
+ec_Retained_tst <- as.numeric(ec_tidy$Retained[-ec_training_rows])
+ec_SuccessTerm1_trn <- as.numeric(ec_tidy$SuccessTerm1[ec_training_rows])
+ec_SuccessTerm1_tst <- as.numeric(ec_tidy$SuccessTerm1[-ec_training_rows])
+ec_SuccessTerm2_trn <- as.numeric(ec_tidy$SuccessTerm2[ec_training_rows])
+ec_SuccessTerm2_tst <- as.numeric(ec_tidy$SuccessTerm2[-ec_training_rows])
+
+ec_CreditRatio_Term1_trn <- ec_tidy$CreditRatio_Term1 == 1
+ec_CreditRatio_Term1_trn <- as.numeric(ec_CreditRatio_Term1_trn[ec_training_rows])
+ec_CreditRatio_Term1_tst <- ec_tidy$CreditRatio_Term1 == 1
+ec_CreditRatio_Term1_tst <- as.numeric(ec_CreditRatio_Term1_tst[-ec_training_rows])
+
+ec_CreditRatio_Term2_trn <- ec_tidy$CreditRatio_Term2 == 1
+ec_CreditRatio_Term2_trn <- as.numeric(ec_CreditRatio_Term2_trn[ec_training_rows])
+ec_CreditRatio_Term2_tst <- ec_tidy$CreditRatio_Term2 == 1
+ec_CreditRatio_Term2_tst <- as.numeric(ec_CreditRatio_Term2_tst[-ec_training_rows])
+```
+
+```{r}
+wgu_Retained_trn <- as.numeric(wgu_tidy$Retained[wgu_training_rows])
+wgu_Retained_tst <- as.numeric(wgu_tidy$Retained[-wgu_training_rows])
+wgu_OnTime_Term1_trn <- as.numeric(wgu_tidy$OnTime_Term1[wgu_training_rows])
+wgu_OnTime_Term1_tst <- as.numeric(wgu_tidy$OnTime_Term1[-wgu_training_rows])
+wgu_OnTime_Term2_trn <- as.numeric(wgu_tidy$OnTime_Term2[wgu_training_rows])
+wgu_OnTime_Term2_tst <- as.numeric(wgu_tidy$OnTime_Term2[-wgu_training_rows])
+
+wgu_CreditRatio_Term1_trn <- wgu_tidy$CreditRatio_Term1 == 1
+wgu_CreditRatio_Term1_trn <- as.numeric(wgu_CreditRatio_Term1_trn[wgu_training_rows])
+wgu_CreditRatio_Term1_tst <- wgu_tidy$CreditRatio_Term1 == 1
+wgu_CreditRatio_Term1_tst <- as.numeric(wgu_CreditRatio_Term1_tst[-wgu_training_rows])
+
+wgu_CreditRatio_Term2_trn <- wgu_tidy$CreditRatio_Term2 == 1
+wgu_CreditRatio_Term2_trn <- as.numeric(wgu_CreditRatio_Term2_trn[wgu_training_rows])
+wgu_CreditRatio_Term2_tst <- wgu_tidy$CreditRatio_Term2 == 1
+wgu_CreditRatio_Term2_tst <- as.numeric(wgu_CreditRatio_Term2_tst[-wgu_training_rows])
+```
+
+
+```{r}
+ec_base_trn <- mod_mtx(ec_base_trn)
+ec_base_tst <- mod_mtx(ec_base_tst)
+```
+
+```{r}
+wgu_base_trn <- mod_mtx(wgu_base_trn)
+wgu_base_tst <- mod_mtx(wgu_base_tst)
+```
+
+```{r}
+SL.ipredbagg_cp_000 <- function(...){
+  SL.ipredbagg(..., control = rpart.control(minsplit = 2, cp = 0, xval = 0))
+}
+SL.ipredbagg_cp_001 <- function(...){
+  SL.ipredbagg(..., control = rpart.control(minsplit = 2, cp = 0.01, xval = 0))
+}
+SL.ipredbagg_cp_010 <- function(...){
+  SL.ipredbagg(..., control = rpart.control(minsplit = 2, cp = 0.10, xval = 0))
+}
+SL.ipredbagg_ms_5 <- function(...){
+  SL.ipredbagg(..., control = rpart.control(minsplit = 5, cp = 0.01, xval = 0))
+}
+SL.gam_deg.gam_2 <- function(...){
+  SL.gam(..., deg.gam = 2)
+}
+SL.gam_deg.gam_3 <- function(...){
+  SL.gam(..., deg.gam = 3)
+}
+SL.gam_deg.gam_4 <- function(...){
+  SL.gam(..., deg.gam = 4)
+}
+SL.nnet_size_2 <- function(...){
+  SL.nnet(..., size = 2)
+}
+SL.nnet_size_3 <- function(...){
+  SL.nnet(..., size = 3)
+}
+SL.nnet_size_4 <- function(...){
+  SL.nnet(..., size = 4)
+}
+SL.nnet_size_5 <- function(...){
+  SL.nnet(..., size = 5)
+}
+SL.loess_span_075 <- function(...){
+  SL.loess(..., span = 0.75)
+}
+SL.loess_span_050 <- function(...){
+  SL.loess(..., span = 0.50)
+}
+SL.loess_span_025 <- function(...){
+  SL.loess(..., span = 0.25)
+}
+SL.loess_span_010 <- function(...){
+  SL.loess(..., span = 0.10)
+}
+SL.kernelKnn_k_10 <- function(...){
+  SL.kernelKnn(..., k = 10)
+}
+SL.kernelKnn_k_15 <- function(...){
+  SL.kernelKnn(..., k = 15)
+}
+SL.kernelKnn_k_20 <- function(...){
+  SL.kernelKnn(..., k = 20)
+}
+SL.kernelKnn_k_25 <- function(...){
+  SL.kernelKnn(..., k = 25)
+}
+SL.glmnet_alpha_025 <- function(...){
+  SL.glmnet(..., alpha = 0.25)
+}
+SL.glmnet_alpha_050 <- function(...){
+  SL.glmnet(..., alpha = 0.50)
+}
+SL.glmnet_alpha_075 <- function(...){
+  SL.glmnet(..., alpha = 0.75)
+}
+SL.glmnet_alpha_1 <- function(...){
+  SL.glmnet(..., alpha = 1)
+}
+```
+
+```{r}
+SLlib_bin <- c("SL.kernelKnn_k_10",
+               "SL.kernelKnn_k_15",
+               "SL.kernelKnn_k_20",
+               "SL.kernelKnn_k_25",
+               "SL.glmnet_alpha_025",
+               "SL.glmnet_alpha_050",
+               "SL.glmnet_alpha_075",
+               "SL.glmnet_alpha_1",
+               "SL.randomForest",
+               "SL.ipredbagg",
+               #"SL.bartMachine",
+               "SL.mean"
+)
+```
+
+# EC
+
+## Model ec_base_Retained
+
+```{r}
+model_title <- "ec_base_Retained"
+explanatory_training_set <- ec_base_trn
+response_training_set <- ec_Retained_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model ec_base_SuccessTerm1
+
+```{r}
+model_title <- "ec_base_SuccessTerm1"
+explanatory_training_set <- ec_base_trn
+response_training_set <- ec_SuccessTerm1_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model ec_base_SuccessTerm2
+
+```{r}
+model_title <- "ec_base_SuccessTerm2"
+explanatory_training_set <- ec_base_trn
+response_training_set <- ec_SuccessTerm2_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model ec_base_CreditRatio_Term1
+
+```{r}
+model_title <- "ec_base_CreditRatio_Term1"
+explanatory_training_set <- ec_base_trn
+response_training_set <- ec_CreditRatio_Term1_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model ec_base_CreditRatio_Term2
+
+```{r}
+model_title <- "ec_base_CreditRatio_Term2"
+explanatory_training_set <- ec_base_trn
+response_training_set <- ec_CreditRatio_Term2_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+# WGU
+
+## Model wgu_base_Retained
+
+```{r}
+model_title <- "wgu_base_Retained"
+explanatory_training_set <- wgu_base_trn
+response_training_set <- wgu_Retained_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model wgu_base_OnTime_Term1
+
+```{r}
+model_title <- "wgu_base_OnTime_Term1"
+explanatory_training_set <- wgu_base_trn
+response_training_set <- wgu_OnTime_Term1_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model wgu_base_OnTime_Term2
+
+```{r}
+model_title <- "wgu_base_OnTime_Term2"
+explanatory_training_set <- wgu_base_trn
+response_training_set <- wgu_OnTime_Term2_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model wgu_base_CreditRatio_Term1
+
+```{r}
+model_title <- "wgu_base_CreditRatio_Term1"
+explanatory_training_set <- wgu_base_trn
+response_training_set <- wgu_CreditRatio_Term1_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```
+
+## Model wgu_base_CreditRatio_Term2
+
+```{r}
+model_title <- "wgu_base_CreditRatio_Term2"
+explanatory_training_set <- wgu_base_trn
+response_training_set <- wgu_CreditRatio_Term2_trn
+```
+
+```{r}
+set.seed(345, "L'Ecuyer-CMRG")
+assign(model_title,
+       SuperLearner(Y = response_training_set,
+                            X = explanatory_training_set,
+                            family = binomial(),
+                            method = "method.AUC",
+                            cvControl = list(V = inner_cv),
+                            SL.library = SLlib_bin))
+```

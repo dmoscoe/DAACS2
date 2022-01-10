@@ -1,0 +1,129 @@
+---
+title: "preds_and_actuals_211026_1324"
+author: "Daniel Moscoe"
+date: "10/26/2021"
+output: html_document
+---
+
+NOTE! You have to run EC_daacs and ec_base separately, and then full_join them later in a separate script.
+
+Construct preds_and_actuals for each institution. preds_and_actuals is a table that contains actual values and predicted values for each model within a single institution.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = FALSE, warning = FALSE}
+#The model_name is the name of the SuperLearner object generated previously. These are large.
+model_name <- "ec_base_CreditRatio_Term2_bin"
+model_dir <- ""
+```
+
+```{r, message = FALSE, warning = FALSE}
+library(janitor)
+library(SuperLearner)
+library(tidyverse)
+```
+
+```{r}
+ec_base_vars <- c('DAACS_ID','INCOME_RANGE_CODE',"EMPLOYMENT_LVL_CODE","ENGLISH_LANGUAGE_NATIVE","First_Generation","ETHNICITY","GENDER","Age","ACTIVE_MIL_STUDENT","MVET","DIVISION_CODE","Initial_TRANSFER_CREDITS_EARNED")
+
+wgu_base_vars <- c('DAACS_ID',"TRANSFER_CREDITS", "CURRENT_PROGRAM_CODE", "Age", "MilitaryStudent", "EMPLOYMENT_STATUS", "FIRST_GEN_STUDENT", "GENDER", "HOUSEHOLD_INCOME", "ETHNICITY2", "Hispanic")
+  
+ec_daacs_vars <- c(ec_base_vars, "srl_grit", "srl_strategies", "srl_metacognition", "srl_anxiety", "srl_mastery_orientation", "srl_mindset", "srl_self_efficacy", "mathTotal", "readTotal", "writeTotal")
+  
+wgu_daacs_vars <- c(wgu_base_vars, "srl_grit", "srl_strategies", "srl_metacognition", "srl_anxiety", "srl_mastery_orientation", "srl_mindset", "srl_self_efficacy", "mathTotal", "readTotal", "writeTotal", "AdvisorUsed", "FeedbackViews")
+
+mod_mtx <- function(df){
+  res <- as.data.frame(
+    model.matrix.lm(
+      ~., data = df, na.action = "na.pass"
+    )
+  )
+  names(res) <- names(clean_names(res))
+  res <- res[,-1]
+  return(res)
+}
+
+loadObject <- function(fileName){
+  load(fileName)
+  get(ls()[ls() != "fileName"])
+}
+```
+
+```{r, message = FALSE, warning = FALSE}
+SL_object <- loadObject(paste0(model_dir, model_name))
+
+if(str_detect(model_name, "ec_daacs")){
+  tidy_data <- read_csv("ec_tidy.csv")
+  complete_rows <- complete.cases(tidy_data)
+  tidy_data <- tidy_data[complete_rows,]
+  training_rows <- loadObject(paste0(model_dir, "ec_training_rows"))
+} else if(str_detect(model_name, "ec_base")){
+  tidy_data <- read_csv("ec_tidy.csv")
+  training_rows <- loadObject(paste0(model_dir, "ec_training_rows"))
+} else {
+  tidy_data <- read_csv("wgu_tidy.csv")
+  training_rows <- loadObject(paste0(model_dir, "wgu_training_rows"))
+}
+
+if(str_detect(model_name, "ec_base")){
+  vars <- ec_base_vars
+} else if(str_detect(model_name, "ec_daacs")){
+  vars <- ec_daacs_vars
+} else if(str_detect(model_name, "wgu_base")){
+  vars <- wgu_base_vars
+} else {
+  vars <- wgu_daacs_vars
+}
+```
+
+```{r}
+if(!exists("preds_and_actuals")){
+  if(str_detect(model_name, "ec_")){
+    preds_and_actuals <- data.frame(
+      "daacs_id" = tidy_data$DAACS_ID,
+      "actual_retained" = as.numeric(tidy_data$Retained),
+      "actual_successterm1" = as.numeric(tidy_data$SuccessTerm1),
+      "actual_successterm2" = as.numeric(tidy_data$SuccessTerm2),
+      "actual_creditratio_term1_cts" = tidy_data$CreditRatio_Term1,
+      "actual_creditratio_term2_cts" = tidy_data$CreditRatio_Term2,
+      "actual_creditratio_term1_bin" = as.numeric(tidy_data$CreditRatio_Term1 == 1),
+      "actual_creditratio_term2_bin" = as.numeric(tidy_data$CreditRatio_Term2 == 1)
+  )
+  } else {
+    preds_and_actuals <- data.frame(
+      "daacs_id" = tidy_data$DAACS_ID,
+      "actual_retained" = as.numeric(tidy_data$Retained),
+      "actual_ontime_term1" = as.numeric(tidy_data$OnTime_Term1),
+      "actual_ontime_term2" = as.numeric(tidy_data$OnTime_Term2),
+      "actual_creditratio_term1_cts" = tidy_data$CreditRatio_Term1,
+      "actual_creditratio_term2_cts" = tidy_data$CreditRatio_Term2,
+      "actual_creditratio_term1_bin" = as.numeric(tidy_data$CreditRatio_Term1 == 1),
+      "actual_creditratio_term2_bin" = as.numeric(tidy_data$CreditRatio_Term2 == 1)
+  )
+  }
+}
+preds_and_actuals$in_test_set <- NA
+preds_and_actuals$in_test_set[-training_rows] <- TRUE
+preds_and_actuals$in_test_set[training_rows] <- FALSE
+
+names(preds_and_actuals)[names(preds_and_actuals) == "in_test_set"] <- paste0("in_test_for_", model_name)
+```
+
+Predict on test set
+```{r, message = FALSE, warning = FALSE}
+test_mod_mtx <- mod_mtx(tidy_data[-training_rows, vars])
+preds <- predict.SuperLearner(SL_object, test_mod_mtx[,-1], onlySL = TRUE)$pred
+```
+
+Augment preds_and_actuals with predictions
+```{r}
+tmp_df <- data.frame("daacs_id" = tidy_data$DAACS_ID[-training_rows], "pred" = preds)
+preds_and_actuals <- full_join(preds_and_actuals, tmp_df, by = "daacs_id")
+names(preds_and_actuals)[names(preds_and_actuals) == "pred"] <- paste0("pred_", model_name)
+```
+
+```{r}
+save(preds_and_actuals, file = "ec_base_preds_and_actuals_211102")
+```

@@ -1,0 +1,236 @@
+---
+title: "inference_211101_1558"
+author: "Daniel Moscoe"
+date: "11/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Are there significant differences in the number of actual positive outcomes for students across groups A and B?
+Group A: students for whom the total number of predicted positive outcomes is highest
+Group B: students for whom the total number of predicted positive outcomes is lowest
+
+Compare mean total positive outcomes for groups A and B for each of:
+WGU Base
+WGU DAACS
+EC Base
+EC DAACS
+
+```{r}
+setwd("C:/Users/dmosc/OneDrive/Documents/academic/CUNY SPS/capstone/scripts_and_models_211026ff")
+
+loadObject <- function(fileName){
+  load(fileName)
+  get(ls()[ls() != "fileName"])
+}
+
+wgu_pa <- loadObject("wgu_preds_and_actuals")
+ec_pa <- loadObject("ec_preds_and_actuals_211102")
+
+```
+
+Compute the model prediction less the optimal cutoff value for each variable for the EC base and DAACS models
+```{r}
+ec_pa_excess_preds <- ec_pa %>%
+  mutate("bin_pred_ec_base_CreditRatio_Term1" = pred_ec_base_CreditRatio_Term1_bin - 0.5840) %>%
+  mutate("bin_pred_ec_base_CreditRatio_Term2" = pred_ec_base_CreditRatio_Term2_bin - 0.5255) %>%
+  mutate("bin_pred_ec_base_SuccessTerm1" = pred_ec_base_SuccessTerm1 - 0.4737) %>%
+  mutate("bin_pred_ec_base_Success_Term2" = pred_ec_base_SuccessTerm2 - 0.4960) %>%
+  mutate("bin_pred_ec_base_Retained" = pred_ec_base_Retained - 0.5070) %>%
+  mutate("bin_pred_ec_daacs_CreditRatio_Term1" = pred_ec_daacs_CreditRatio_Term1_bin - 0.7362) %>%
+  mutate("bin_pred_ec_daacs_CreditRatio_Term2" = pred_ec_daacs_CreditRatio_Term2_bin - 0.3982) %>%
+  mutate("bin_pred_ec_daacs_SuccessTerm1" = pred_ec_daacs_SuccessTerm1 - 0.6299) %>%
+  mutate("bin_pred_ec_daacs_Success_Term2" = pred_ec_daacs_SuccessTerm2 - 0.4561) %>%
+  mutate("bin_pred_ec_daacs_Retained" = pred_ec_daacs_Retained - 0.4181)
+```
+
+Compute the total number of actual positive outcomes and the total prediction - optimal cutoff
+```{r}
+ec_pa_excess_preds <- ec_pa_excess_preds %>%
+  mutate("sum_actuals" = actual_retained + actual_successterm1 + actual_successterm2 + actual_creditratio_term1_bin + actual_creditratio_term2_bin) %>%
+  mutate("sum_base_preds" = bin_pred_ec_base_CreditRatio_Term1 + bin_pred_ec_base_CreditRatio_Term2 + bin_pred_ec_base_SuccessTerm1 + bin_pred_ec_base_Success_Term2 + bin_pred_ec_base_Retained) %>%
+  mutate("sum_daacs_preds" = bin_pred_ec_daacs_CreditRatio_Term1 + bin_pred_ec_daacs_CreditRatio_Term2 + bin_pred_ec_daacs_SuccessTerm1 + bin_pred_ec_daacs_Success_Term2 + bin_pred_ec_daacs_Retained)
+```
+
+```{r}
+ec_pa_excess_preds <- arrange(ec_pa_excess_preds, sum_base_preds)
+```
+
+There are 507 rows with base predictions. They're sorted ascending. Compare mean sum_actuals for the first half of these rows with sum_actuals for second half of these rows.
+
+```{r}
+tmp_group_B <- ec_pa_excess_preds[c(1:253), "sum_actuals"]
+tmp_group_A <- ec_pa_excess_preds[c(254:507), "sum_actuals"]
+```
+
+Is the mean sum_actuals for group A significantly greater than the mean sum_actuals for group B? Yes.
+```{r}
+t.test(tmp_group_A, tmp_group_B)
+```
+###211110###
+```{r}
+tmp <- data.frame("obs" = c(tmp_group_A, tmp_group_B), "group" = NA)
+tmp[c(1:254),"group"] <- "A"
+tmp[c(255:507),"group"] <- "B"
+
+ggplot(tmp, aes(x = obs, fill = group)) +
+  geom_density(alpha = 0.5)
+
+
+hist(tmp_group_A)
+hist(tmp_group_B)
+
+```
+###211110###
+
+```{r}
+ec_pa_excess_preds <- arrange(ec_pa_excess_preds, sum_daacs_preds)
+```
+
+There are 157 rows with DAACS predictions. They're sorted ascending. Compare mean sum_actuals for the first half of these rows with sum_actuals for the second half of these rows.
+
+```{r}
+tmp_group_B <- ec_pa_excess_preds[c(1:78), "sum_actuals"]
+tmp_group_A <- ec_pa_excess_preds[c(79:157), "sum_actuals"]
+```
+
+Is the mean sum_actuals for group A significantly greater than the mean sum_actuals for group B? Yes, but the CI is much wider. We need more data here.
+```{r}
+t.test(tmp_group_A, tmp_group_B)
+```
+
+###211110###
+```{r}
+tmp <- data.frame("obs" = c(tmp_group_A, tmp_group_B), "group" = NA)
+tmp[c(1:79),"group"] <- "A"
+tmp[c(80:157),"group"] <- "B"
+
+ggplot(tmp, aes(x = obs, fill = group)) +
+  geom_density(alpha = 0.5)
+```
+
+
+Now we do the same thing for WGU.
+
+```{r}
+wgu_pa_excess_preds <- wgu_pa %>%
+  mutate("bin_pred_wgu_base_CreditRatio_Term1" = pred_wgu_base_CreditRatio_Term1_bin - 0.4452) %>%
+  mutate("bin_pred_wgu_base_CreditRatio_Term2" = pred_wgu_base_CreditRatio_Term2_bin - 0.4454) %>%
+  mutate("bin_pred_wgu_base_OnTime_Term1" = pred_wgu_base_OnTime_Term1 - 0.5229) %>%
+  mutate("bin_pred_wgu_base_OnTime_Term2" = pred_wgu_base_OnTime_Term2 - 0.5242) %>%
+  mutate("bin_pred_wgu_base_Retained" = pred_wgu_base_Retained - 0.6177) %>%
+  mutate("bin_pred_wgu_daacs_CreditRatio_Term1" = pred_wgu_daacs_CreditRatio_Term1_bin - 0.4894) %>%
+  mutate("bin_pred_wgu_daacs_CreditRatio_Term2" = pred_wgu_daacs_CreditRatio_Term2_bin - 0.4336) %>%
+  mutate("bin_pred_wgu_daacs_OnTime_Term1" = pred_wgu_daacs_OnTime_Term1 - 0.5640) %>%
+  mutate("bin_pred_wgu_daacs_OnTime_Term2" = pred_wgu_daacs_OnTime_Term2 - 0.4673) %>%
+  mutate("bin_pred_wgu_daacs_Retained" = pred_wgu_daacs_Retained - 0.5009)
+```
+
+Compute the total number of actual positive outcomes and the total prediction - optimal cutoff
+```{r}
+wgu_pa_excess_preds <- wgu_pa_excess_preds %>%
+  mutate("sum_actuals" = actual_retained + actual_ontime_term1 + actual_ontime_term2 + actual_creditratio_term1_bin + actual_creditratio_term2_bin) %>%
+  mutate("sum_base_preds" = bin_pred_wgu_base_CreditRatio_Term1 + bin_pred_wgu_base_CreditRatio_Term2 + bin_pred_wgu_base_OnTime_Term1 + bin_pred_wgu_base_OnTime_Term2 + bin_pred_wgu_base_Retained) %>%
+  mutate("sum_daacs_preds" = bin_pred_wgu_daacs_CreditRatio_Term1 + bin_pred_wgu_daacs_CreditRatio_Term2 + bin_pred_wgu_daacs_OnTime_Term1 + bin_pred_wgu_daacs_OnTime_Term2 + bin_pred_wgu_daacs_Retained)
+```
+
+```{r}
+wgu_pa_excess_preds <- arrange(wgu_pa_excess_preds, sum_base_preds)
+```
+
+There are 1252 rows with base predictions. They're sorted ascending. Compare mean sum_actuals for the first half of these rows with sum_actuals for second half of these rows.
+
+```{r}
+tmp_group_B <- wgu_pa_excess_preds[c(1:626), "sum_actuals"]
+tmp_group_A <- wgu_pa_excess_preds[c(627:1252), "sum_actuals"]
+```
+
+Is the mean sum_actuals for group A significantly greater than the mean sum_actuals for group B? Yes.
+```{r}
+t.test(tmp_group_A, tmp_group_B)
+```
+###211110###
+```{r}
+tmp <- data.frame("obs" = c(tmp_group_A, tmp_group_B), "group" = NA)
+tmp[c(1:626),"group"] <- "A"
+tmp[c(627:1252),"group"] <- "B"
+
+ggplot(tmp, aes(x = obs, fill = group)) +
+  geom_density(alpha = 0.5)
+```
+
+
+```{r}
+wgu_pa_excess_preds <- arrange(wgu_pa_excess_preds, sum_daacs_preds)
+```
+
+There are 1252 rows with DAACS predictions. They're sorted ascending. Compare mean sum_actuals for the first half of these rows with sum_actuals for the second half of these rows.
+
+```{r}
+tmp_group_B <- wgu_pa_excess_preds[c(1:626), "sum_actuals"]
+tmp_group_A <- wgu_pa_excess_preds[c(627:1252), "sum_actuals"]
+```
+
+Is the mean sum_actuals for group A significantly greater than the mean sum_actuals for group B? Yes.
+```{r}
+t.test(tmp_group_A, tmp_group_B)
+```
+###211110###
+
+```{r}
+tmp <- data.frame("obs" = c(tmp_group_A, tmp_group_B), "group" = NA)
+tmp[c(1:626),"group"] <- "A"
+tmp[c(627:1252),"group"] <- "B"
+
+ggplot(tmp, aes(x = obs, fill = group)) +
+  geom_density(alpha = 0.5)
+```
+
+DAACS assessment results can help identify students most in need of academic intervention/enhanced advising/additional support.
+I predicted five academic outcomes for each student using demographic data only, and then again using demographic and DAACS assessment data. Then I split students at each school into two groups. Group A had the highest number of predicted positive outcomes. That is, I predict these students will do the best. Group B had the lowest number of predicted positive outcomes. That is, I predict these students will do the worst.
+
+At EC using base variables only, there was a difference in average number of positive outcomes of 0.50. Students in Group A had on average 3.47 positive outcomes. Students in Group B had on average 2.97 positive outcomes (p = 0.001).
+
+At EC using base and DAACS variables, there was a difference in average number of positive outcomes of 0.62. Students in Group A had on average 3.71 positive outcomes. Students in Group B had on average 3.09 positive outcomes (p = 0.027).
+
+At WGU using base variables only, there was a difference in average number of positive outcomes of 0.63. Students in Group A had on average 3.02 positive outcomes. Students in Group B had on average 2.39 positive outcomes (p < 0.001).
+
+At WGU using base and DAACS variables, there was a difference in average number of positive outcomes of 1.00. Students in Group A had on average 3.23 positive outcomes. Students in Group B had on average 2.23 positive outcomes (p < 0.001).
+
+DAACS assessments when combined with other data can help identify a cohort of students likely to attain fewer positive academic outcomes. This can help institutions target support resources to students who need them the most.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

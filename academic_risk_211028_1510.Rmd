@@ -1,0 +1,112 @@
+---
+title: "academic risk"
+author: "Daniel Moscoe"
+date: "10/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+loadObject <- function(fileName){
+  load(fileName)
+  get(ls()[ls() != "fileName"])
+}
+```
+
+You want to know, for each student, how many negative outcomes were predicted? How many negative outcomes did they experience? Look at a 5x5 confusion matrix
+
+Another way you could do this would be to compare the sum of the predictions - optimal_cutoffs to the number of negative outcomes. Look at a scatterplot.
+
+```{r}
+wgu_pa <- loadObject("wgu_preds_and_actuals")
+ec_pa <- loadObject("ec_preds_and_actuals")
+
+model_results <- loadObject("model_results_211028_1134")
+
+load("ec_tidy.csv")
+load("wgu_tidy.csv")
+```
+
+# WGU
+
+```{r}
+
+#This is just for for predictions from base models
+
+wgu_pa_base <- wgu_pa %>%
+  mutate("total_actual_positive_outcomes" = actual_retained + actual_ontime_term1 + actual_ontime_term2 + actual_creditratio_term1_bin + actual_creditratio_term2_bin) %>% mutate(
+    "total_predicted_positive_outcomes" = (pred_wgu_base_Retained > 0.6177) +
+      (pred_wgu_base_OnTime_Term1 > 0.5229) +
+      (pred_wgu_base_OnTime_Term2 > 0.5242) +
+      (pred_wgu_base_CreditRatio_Term1_bin > 0.4452) +
+      (pred_wgu_base_CreditRatio_Term2_bin > 0.4454))
+
+wgu_pa_daacs <- wgu_pa %>%
+    mutate("total_actual_positive_outcomes" = actual_retained + actual_ontime_term1 + actual_ontime_term2 + actual_creditratio_term1_bin + actual_creditratio_term2_bin) %>% mutate(
+    "total_predicted_positive_outcomes" = (pred_wgu_daacs_Retained > 0.5009) +
+      (pred_wgu_daacs_OnTime_Term1 > 0.5640) +
+      (pred_wgu_daacs_OnTime_Term2 > 0.4673) +
+      (pred_wgu_daacs_CreditRatio_Term1_bin > 0.4894) +
+      (pred_wgu_daacs_CreditRatio_Term2_bin > 0.4336))
+```
+
+```{r}
+tmp <- wgu_pa_base %>%
+  filter(!is.na(total_predicted_positive_outcomes))
+
+nrow(tmp)
+
+#actuals are rows, preds are cols
+table(tmp$total_actual_positive_outcomes, tmp$total_predicted_positive_outcomes)
+```
+with the daacs model:
+If we predict you will have no negative outcomes, then we're 49% accurate. (n = 53)
+If we predict you will have 1 negative outcome, then there's a 63% chance you will have at least 1 negative outcome. (n = 228)
+If we predict you will have 2 negative outcomes, then there's a 75% chance you will have at least 1 negative outcome. (n = 683)
+If we predict you will have 3, then p(at least 1) is 87% (n = 142)
+If we predict you will have 4, then p(at least 1) is 96% (n = 144)
+
+with base:
+If we predict you will have no negative outcomes, (n = 1)
+If we predict you will have 1 negative outcome, then there's a 67% chance you will have at least 1 negative outcome. (n = 30)
+If we predict you will have 2 negative outcomes, then there's a 76% chance you will have at least 1 negative outcome. (n = 1084)
+If we predict you will have 3, then p(at least 1) is 86% (n = 56)
+If we predict you will have 4, then p(at least 1) is 89% (n = 80)
+
+We can make some claims about some students. But those claims are pretty hedged, and the number of students we can make strong claims about is small.
+
+# EC
+
+```{r}
+#This is just for for predictions from base models
+
+ec_pa_base <- ec_pa %>%
+  mutate("total_actual_positive_outcomes" = actual_retained + actual_successterm1 + actual_successterm2 + actual_creditratio_term1_bin + actual_creditratio_term2_bin) %>% mutate(
+    "total_predicted_positive_outcomes" = (pred_ec_base_Retained > 0.5070) +
+      (pred_ec_base_SuccessTerm1 > 0.4737) +
+      (pred_ec_base_SuccessTerm2 > 0.4960) +
+      (pred_ec_base_CreditRatio_Term1_bin > 0.5840) +
+      (pred_ec_base_CreditRatio_Term2_bin > 0.5255))
+
+ec_pa_daacs <- ec_pa %>%
+    mutate("total_actual_positive_outcomes" = actual_retained + actual_successterm1 + actual_successterm2 + actual_creditratio_term1_bin + actual_creditratio_term2_bin) %>% mutate(
+    "total_predicted_positive_outcomes" = (pred_ec_daacs_Retained > 0.4181) +
+      (pred_ec_daacs_SuccessTerm1 > 0.6299) +
+      (pred_ec_daacs_SuccessTerm2 > 0.4561) +
+      (pred_ec_daacs_CreditRatio_Term1_bin > 0.7362) +
+      (pred_ec_daacs_CreditRatio_Term2_bin > 0.3982))
+```
+
+```{r}
+tmp <- ec_pa_base %>%
+  filter(!is.na(total_predicted_positive_outcomes))
+
+nrow(tmp)
+
+#actuals are rows, preds are cols
+table(tmp$total_actual_positive_outcomes, tmp$total_predicted_positive_outcomes)
+```
